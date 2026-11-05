@@ -6,21 +6,9 @@ Entre 8 y 12 veces al mes, el área administrativa transcribe a mano en el forma
 
 ## 2. Arquitectura
 
-```
-┌──────────── web/ (chat) ─────────────┐   POST /api/chat    ┌──────────── src/server.ts ────────────┐
-│ historial · tarjetas de herramientas │ ──────────────────▶ │ sesiones en memoria · SSE             │
-│ turno resaltado si pide confirmación │ ◀── SSE: texto,     │  src/core/agente.ts (ciclo del agente)│
-│ botones Confirmo / No, cancela       │   llamada, resultado│   topes · guardia de confirmación     │
-└──────────────────────────────────────┘   fin_turno         │   bitácora → out/log.jsonl (CA4)      │
-                                                             └───┬───────────────┬───────────────────┘
-                                          src/llm/adapter.ts ◀───┘               ▼
-                                          gemini.ts · anthropic.ts   src/tools/proveedor.ts (proveedor_*)
-                                                                                 │  log por caso → out/<caso>/log.jsonl (RN5)
-                     src/proveedor/  fuentes · mapeo (glosario, RN1) · formulario (xlsx/pdf/portal) · paquete (RN2, RN3)
-                                                                                 │
-              fixtures/reto-01 (lectura): casos/<caso>/, repositorio/{maestro.json, soportes/}, glosario-campos.json
-              out/<caso>/ (escritura): formulario.xlsx|pdf · valores-portal.md · paquete/ · ENVIO-SIMULADO.md · log.jsonl
-```
+![Arquitectura del agente](docs/arquitectura.svg)
+
+*El diagrama muestra las capas (chat, API, ciclo del agente, herramientas, lógica y datos), el proveedor de IA, la verificación sin modelo (`demo.ts`) y el flujo numerado de un mensaje.*
 
 | Capa | Dónde | Qué contiene |
 |---|---|---|
