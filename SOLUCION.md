@@ -145,15 +145,15 @@ Usé **Claude Code** (modelo Claude Opus 5.5) como asistente de desarrollo:
 |---|---|---|
 | Análisis | Leyó el PRD y los fixtures y detectó la trampa de la fecha (parafiscales vencidos al 3 de septiembre; con la fecha real, también la Cámara de Comercio) | La fecha de referencia configurable |
 | Reutilización | Partió del núcleo común de los retos 02 y 03 | La estrategia de un núcleo para los tres retos |
-| Código | Escribió el mapeo, el Excel, el PDF, el paquete y los tests; verificó el Excel leyéndolo de vuelta celda por celda | Las reglas de presentación (NIT con o sin dígito, país por nombre) |
-| Pruebas reales | Ejecutó el flujo de la sección 11 contra Gemini | — |
+| Código | Escribió el mapeo, el Excel, el PDF, el paquete y los tests; verificó el Excel leyéndolo de vuelta celda por celda | Aprobar las reglas de presentación (NIT con o sin dígito, país por nombre) |
+| Pruebas reales | Ejecutó el flujo de la sección 11 contra Gemini | Probar el chat en vivo |
 | Documentación | Redactó README, CLAUDE.md y este documento, incluido el diseño de portales | Validar supuestos y redacción |
 
-**Lo que descarté de lo propuesto o lo que corregí:**
-- **Bloquear el envío de paquetes incompletos:** era la primera versión. La cambié al releer el PRD, cuyo ejemplo espera el envío de un caso no listo tras la confirmación.
+**Lo que se descartó o corrigió en el camino:**
+- **Bloquear el envío de paquetes incompletos:** era la primera versión. Se cambió al revisar el ejemplo del PRD, que espera el envío de un caso no listo tras la confirmación.
 - **Confirmación genérica por turno:** la prueba real mostró que un "sí" sobre el RUC habilitaba el envío. Ahora la confirmación se liga a la acción, y el arreglo se llevó al núcleo de los tres retos.
-- **SheetJS desde npm:** lo descarté por las vulnerabilidades conocidas de esa versión.
-- **El modelo atribuía el bloqueo de la firma a los campos por confirmar:** lo corregí en el prompt, porque solo los soportes bloquean (RN3).
+- **SheetJS desde npm:** se descartó por las vulnerabilidades conocidas de esa versión.
+- **El modelo atribuía el bloqueo de la firma a los campos por confirmar:** se corrigió en el prompt, porque solo los soportes bloquean (RN3).
 
 ## 10. Riesgos de llevar esto a producción
 
