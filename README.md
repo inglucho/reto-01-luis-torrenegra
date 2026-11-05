@@ -2,7 +2,7 @@
 
 Agente que, a partir de la solicitud de un cliente, identifica los campos pedidos, los llena desde el repositorio maestro de Periferia, genera el formulario en el formato del cliente (Excel, PDF o valores para portal web) y arma el paquete de soportes para la firma del representante legal. Nunca firma ni envía: prepara y deja la decisión final a una persona.
 
-- **Link de prueba:** _pendiente de despliegue_
+- **Link de prueba:** https://reto-01-luis-torrenegra.onrender.com (Render, plan gratuito: la primera visita puede tardar ~50 s en despertar)
 - **Planteamiento de la solución y diseño de portales web:** [`SOLUCION.md`](SOLUCION.md)
 - **PRD del reto:** entregado por Periferia IT Group; no se publica en este repositorio
 
