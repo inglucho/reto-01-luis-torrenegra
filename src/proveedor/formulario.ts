@@ -8,20 +8,21 @@ import type { CampoSolicitado, Mapeo, Solicitud } from "./tipos";
 /** Fecha fija en los metadatos: el mismo caso produce el mismo archivo (determinismo). */
 const FECHA_FIJA = new Date("2026-01-01T00:00:00Z");
 
-const MARCA_CONFIRMAR = " [por confirmar]";
 const MARCA_FALTANTE = "[FALTANTE: completar manualmente]";
 
 interface Valor {
   texto: string;
   estado: "lleno" | "confirmar" | "faltante";
+  /** Por qué hay que confirmarlo o por qué falta; va como nota, nunca dentro del valor. */
+  nota?: string;
 }
 
 /** Valor que va en el formulario para cada etiqueta según el mapeo. */
 export function valoresPorEtiqueta(mapeo: Mapeo): Map<string, Valor> {
   const valores = new Map<string, Valor>();
   for (const l of mapeo.llenos) valores.set(l.etiqueta, { texto: l.valor, estado: "lleno" });
-  for (const c of mapeo.requiere_confirmacion) valores.set(c.etiqueta, { texto: c.valor ?? "", estado: "confirmar" });
-  for (const f of mapeo.faltantes) valores.set(f.etiqueta, { texto: "", estado: "faltante" });
+  for (const c of mapeo.requiere_confirmacion) valores.set(c.etiqueta, { texto: c.valor ?? "", estado: "confirmar", nota: `Por confirmar: ${c.motivo}` });
+  for (const f of mapeo.faltantes) valores.set(f.etiqueta, { texto: "", estado: "faltante", nota: `Faltante: ${f.motivo}` });
   return valores;
 }
 
@@ -33,7 +34,7 @@ export interface Formulario {
 }
 
 /** HU-3: produce el formulario en el formato del cliente (P0 xlsx, P1 pdf, P2 portal → valores para copiar). */
-export async function generarFormulario(dir: string, s: Solicitud, campos: CampoSolicitado[], mapeo: Mapeo): Promise<Formulario> {
+export async function generarFormulario(dir: string, s: Solicitud, campos: CampoSolicitado[], mapeo: Mapeo, razonSocial: string): Promise<Formulario> {
   const carpeta = rutas(dir, s.id).salida;
   await mkdir(carpeta, { recursive: true });
   const valores = valoresPorEtiqueta(mapeo);
@@ -42,7 +43,7 @@ export async function generarFormulario(dir: string, s: Solicitud, campos: Campo
     return { ruta: join("out", s.id, "formulario.xlsx"), formato: "xlsx", soportado: true };
   }
   if (s.formato === "pdf") {
-    await Bun.write(join(carpeta, "formulario.pdf"), await pdf(s, campos, valores));
+    await Bun.write(join(carpeta, "formulario.pdf"), await pdf(s, campos, valores, razonSocial));
     return { ruta: join("out", s.id, "formulario.pdf"), formato: "pdf", soportado: true };
   }
   await Bun.write(join(carpeta, "valores-portal.md"), portal(s, campos, valores));
@@ -69,8 +70,12 @@ async function excel(campos: CampoSolicitado[], valores: Map<string, Valor>): Pr
     etiqueta.font = { bold: true };
     const v = valores.get(campo.etiqueta);
     const celda = hojaExcel.getCell(celda_valor);
-    celda.value = v?.estado === "faltante" ? null : `${v?.texto ?? ""}${v?.estado === "confirmar" ? MARCA_CONFIRMAR : ""}`;
-    if (v?.estado !== "lleno") celda.fill = { type: "pattern", pattern: "solid", fgColor: { argb: v?.estado === "faltante" ? "FFF8D7DA" : "FFFFF3CD" } };
+    // El valor va exacto; lo que hay que confirmar o completar se marca con color y una nota en la celda.
+    celda.value = v?.estado === "faltante" ? null : (v?.texto ?? "");
+    if (v?.estado !== "lleno") {
+      celda.fill = { type: "pattern", pattern: "solid", fgColor: { argb: v?.estado === "faltante" ? "FFF8D7DA" : "FFFFF3CD" } };
+      if (v?.nota) celda.note = v.nota;
+    }
     hojaExcel.getColumn(etiqueta.col).width = 34;
     hojaExcel.getColumn(celda.col).width = 48;
   }
@@ -78,7 +83,7 @@ async function excel(campos: CampoSolicitado[], valores: Map<string, Valor>): Pr
 }
 
 /** P1: PDF generado (no un AcroForm) con todos los campos, con etiqueta y valor, en el orden dado. */
-async function pdf(s: Solicitud, campos: CampoSolicitado[], valores: Map<string, Valor>): Promise<Uint8Array> {
+async function pdf(s: Solicitud, campos: CampoSolicitado[], valores: Map<string, Valor>, razonSocial: string): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
   doc.setCreationDate(FECHA_FIJA);
   doc.setModificationDate(FECHA_FIJA);
@@ -97,13 +102,15 @@ async function pdf(s: Solicitud, campos: CampoSolicitado[], valores: Map<string,
   };
 
   escribir(`Formulario de calificación de proveedores — ${s.cliente}`, negrita, 13);
-  escribir("Proveedor: Periferia IT Group S.A.S.", normal);
+  escribir(`Proveedor: ${razonSocial}`, normal);
   y -= 8;
   for (const campo of campos) {
     const v = valores.get(campo.etiqueta);
-    const valor = v?.estado === "faltante" ? MARCA_FALTANTE : `${v?.texto ?? ""}${v?.estado === "confirmar" ? MARCA_CONFIRMAR : ""}`;
+    const valor = v?.estado === "faltante" ? MARCA_FALTANTE : (v?.texto ?? "");
     escribir(`${campo.etiqueta}${campo.obligatorio ? " *" : ""}`, negrita);
     for (const linea of envolver(valor, 95)) escribir(`    ${linea}`, normal);
+    // La nota va en una línea aparte, para que el valor quede exacto.
+    if (v?.estado === "confirmar" && v.nota) for (const linea of envolver(`(${v.nota})`, 95)) escribir(`    ${linea}`, normal, 8);
   }
   firma(pagina, normal, Math.max(y - 40, 60));
   return doc.save();

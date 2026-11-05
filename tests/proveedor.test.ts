@@ -150,6 +150,41 @@ describe("herramientas", () => {
     expect(!corrupta.ok && corrupta.error).toContain("corrupto");
   });
 
+  test("plantilla corrupta: leer_solicitud y armar_paquete entregan lo que sí se puede (HU-5)", async () => {
+    await writeFile(join(dir, "fixtures/reto-01/casos/hn-agroexport-sula/plantilla-celdas.json"), "[{ roto");
+    const leida = await correr(leer_solicitud.execute({ caso: "hn-agroexport-sula" }, ctx()));
+    expect(leida.ok && leida.data).toMatchObject({ pais: "HN", soportes: ["camara_comercio", "rut", "parafiscales"], campos: [] });
+    const paquete = await correr(armar_paquete.execute({ caso: "hn-agroexport-sula", fecha_referencia: FECHA }, ctx()));
+    expect(paquete.ok && paquete.data).toMatchObject({ listo_para_firma: false, formulario: null });
+    expect(await Bun.file(join(dir, "out/hn-agroexport-sula/paquete/checklist.md")).text()).toContain("plantilla");
+  });
+
+  test("nunca lanza ni escribe fuera de out/ con argumentos inválidos (llamada directa)", async () => {
+    const nulo = await correr(leer_solicitud.execute(null as unknown as { caso: string }, ctx()));
+    expect(!nulo.ok && nulo.error).toContain("Argumentos inválidos");
+    const fuera = await correr(leer_solicitud.execute({ caso: "../fuera" }, ctx()));
+    expect(fuera.ok).toBe(false);
+    expect(await Bun.file(join(dir, "fuera/log.jsonl")).exists()).toBe(false);
+    await leer_solicitud.execute({ caso: "no-existe" }, ctx());
+    expect(await Bun.file(join(dir, "out/no-existe/log.jsonl")).exists()).toBe(false);
+  });
+
+  test("el valor de la celda es exacto; lo que hay que confirmar va como nota (HU-3)", async () => {
+    await generar_formulario.execute({ caso: "hn-agroexport-sula" }, ctx());
+    const libro = new ExcelJS.Workbook();
+    await libro.xlsx.readFile(join(dir, "out/hn-agroexport-sula/formulario.xlsx"));
+    const celda = libro.getWorksheet("Registro")?.getCell("B3");
+    expect(celda?.value).toBe("900123456-7");
+    expect(JSON.stringify(celda?.note)).toContain("Identificador extranjero");
+  });
+
+  test("el borrador no adjunta soportes vencidos", async () => {
+    await armar_paquete.execute({ caso: "hn-agroexport-sula", fecha_referencia: FECHA }, ctx());
+    const borrador = await Bun.file(join(dir, "out/hn-agroexport-sula/paquete/borrador-correo.md")).text();
+    expect(borrador).toContain("rut-2026.txt");
+    expect(borrador).not.toContain("parafiscales");
+  });
+
   test("cada ejecución deja su línea en out/<caso>/log.jsonl (RN5)", async () => {
     await leer_solicitud.execute({ caso: "ec-corp-andina" }, ctx());
     const linea = JSON.parse((await Bun.file(join(dir, "out/ec-corp-andina/log.jsonl")).text()).trim());

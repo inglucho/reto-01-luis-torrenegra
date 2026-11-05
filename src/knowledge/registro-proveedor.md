@@ -22,7 +22,7 @@ El glosario resuelve los sinónimos que usan los clientes ("Nombre de la empresa
 | Ecuador, Perú, Panamá | RUC |
 | Honduras | RTN |
 
-Periferia solo tiene NIT colombiano (900123456-7). Para otros países el campo se llena con el NIT y se marca por confirmar como "identificador extranjero". Si la plantilla pide el dígito de verificación aparte, el NIT va sin él.
+Periferia solo tiene NIT colombiano. Para otros países el campo se llena con el NIT y se marca por confirmar como "identificador extranjero". Si la plantilla pide el dígito de verificación aparte, el NIT va sin él.
 
 ## Datos bancarios (RN2)
 

@@ -41,10 +41,10 @@ async function leerJson<S extends z.ZodType>(ruta: string, esquema: S, nombre: s
   try {
     crudo = JSON.parse(await archivo.text());
   } catch {
-    throw new ErrorFuente(`${nombre} está corrupto: no es un JSON válido.`);
+    throw new ErrorFuente(`${nombre}: el archivo está corrupto, no es un JSON válido.`);
   }
   const r = esquema.safeParse(crudo);
-  if (!r.success) throw new ErrorFuente(`${nombre} está corrupto: ${z.prettifyError(r.error)}`);
+  if (!r.success) throw new ErrorFuente(`${nombre}: el archivo está corrupto (${z.prettifyError(r.error)}).`);
   return r.data;
 }
 
@@ -65,10 +65,10 @@ export async function leerSolicitud(dir: string, caso: string): Promise<Solicitu
 export async function leerCampos(dir: string, caso: string, formato: Solicitud["formato"]): Promise<CampoSolicitado[]> {
   const base = rutas(dir, caso).caso;
   if (formato === "xlsx") {
-    const celdas = await leerJson(join(base, "plantilla-celdas.json"), PlantillaCeldasSchema, "La plantilla de celdas");
+    const celdas = await leerJson(join(base, "plantilla-celdas.json"), PlantillaCeldasSchema, "La plantilla de celdas (plantilla-celdas.json)");
     return celdas.map((c) => ({ etiqueta: c.etiqueta, obligatorio: true, ubicacion: { hoja: c.hoja, celda_etiqueta: c.celda_etiqueta, celda_valor: c.celda_valor } }));
   }
-  return leerJson(join(base, "plantilla-campos.json"), PlantillaCamposSchema, "La plantilla de campos");
+  return leerJson(join(base, "plantilla-campos.json"), PlantillaCamposSchema, "La plantilla de campos (plantilla-campos.json)");
 }
 
 export async function leerSoportesExigidos(dir: string, caso: string): Promise<string[]> {

@@ -30,16 +30,22 @@ Entre 8 y 12 veces al mes, el área administrativa transcribe a mano en el forma
 
 ## 3. Ciclo del agente
 
-El ciclo es propio (`src/core/agente.ts`, menos de 220 líneas) y no depende del proveedor. Se agrega el mensaje a la sesión, se llama al modelo vía `AdaptadorLLM.enviar(mensajes, herramientas)`, se validan con zod los argumentos de cada herramienta, se ejecuta y se devuelve el resultado al modelo. Esto se repite hasta que el modelo responde sin herramientas. Cada llamada se ve en el chat por SSE y queda en `out/log.jsonl`.
+El ciclo es propio (`src/core/agente.ts`, unas 250 líneas) y no depende del proveedor. Se agrega el mensaje a la sesión, se llama al modelo vía `AdaptadorLLM.enviar(mensajes, herramientas)`, se validan con zod los argumentos de cada herramienta, se ejecuta y se devuelve el resultado al modelo. Esto se repite hasta que el modelo responde sin herramientas. Cada llamada se ve en el chat por SSE y queda en `out/log.jsonl`.
 
-**Topes.** Hay un máximo de 25 rondas por turno; en la última se le pide al modelo cerrar con lo que tiene y lo que falta. También hay un tope de tokens por sesión y un timeout al proveedor; los tres son configurables.
+**Topes (CA1 y costo).** Hay un máximo de 25 rondas por turno: en la última, los resultados van con una nota que le pide al modelo cerrar con lo que tiene. Si aun así pide más herramientas, no se ejecutan y el turno termina con un resumen determinista de lo hecho y lo que falta. Para el costo hay tres topes configurables: tokens por conversación, **tokens por día para todo el servidor** (el link es público y cualquiera podría abrir conversaciones nuevas) y **mensajes por IP** en una ventana de minutos. A eso se suma un timeout al proveedor.
 
 **Confirmación humana (CA3 y RN4).** Ninguna acción externa ocurre sin una confirmación explícita en el mensaje inmediatamente anterior:
 1. **La herramienta decide.** `proveedor_simular_envio` sin `confirmado` responde `{ ok: false, error: "requiere confirmación explícita" }` y explica qué se va a enviar. Si el paquete no está listo para firma, lo advierte en la pregunta.
-2. **El backend garantiza, por acción.** Cada confirmación queda ligada a la acción que la pidió. `confirmado: true` solo se acepta para esa acción y solo si el siguiente mensaje del usuario la confirma sin negación. Un "sí" a otra pregunta (por ejemplo, sobre el RUC) **no** autoriza un envío.
+2. **El backend garantiza, por acción y por caso.** Cada confirmación queda ligada a la herramienta que la pidió y al caso (`caso` o `mensaje_id`). Un "sí" a una pregunta sobre el RUC no autoriza un envío. Una validación puede declarar qué acción habilita (por ejemplo, validar habilita crear o registrar). `confirmado: true` solo pasa si el siguiente mensaje del usuario confirma sin negar; si el modelo lo usa por su cuenta, el backend lo bloquea. La detección reconoce "sí" con tilde y frases como "confirmo, no hay más cambios".
 
    Esto lo encontró la prueba real: tras "envía", el modelo intentó enviar directamente con `confirmado: true` aprovechando una confirmación pendiente sobre el RUC. Ahora el backend lo bloquea y el agente pregunta.
 3. **El chat lo hace visible.** El turno se resalta con botones de respuesta rápida.
+
+**Bitácora (CA4).** Toda llamada queda en `out/log.jsonl`, también las que no llegan a ejecutarse, marcadas con `ejecutada: false`. Además, cada herramienta deja `{ ts, herramienta, ok, resumen }` en `out/<caso>/log.jsonl` (RN5), solo para casos que existen: un nombre inválido no crea carpetas.
+
+**Adaptador LLM.** La interfaz es `enviar(mensajes, herramientas, opciones)`. El tercer parámetro lleva el system prompt y el callback de streaming: el contrato del PRD no lo nombra, pero cualquier proveedor lo necesita. Cambiar de proveedor no toca el ciclo.
+
+**Interfaz de chat.** La pantalla inicial propone instrucciones de ejemplo. Cada respuesta muestra los pasos del agente: la herramienta, sus argumentos y un resumen en lenguaje natural que escribe la propia herramienta (el JSON completo queda plegado). Las respuestas se renderizan en Markdown escapando todo el HTML, y la confirmación se destaca con botones.
 
 **Errores (CA5 y HU-5).** Una plantilla corrupta, un caso inexistente o un nombre de caso inseguro devuelven un mensaje claro, sin traza cruda, y el resto del trabajo sigue.
 
@@ -98,23 +104,38 @@ El caso pa-logistica-istmo pide registrarse en un portal (VendorHub) con usuario
 | # | Decisión | Alternativa descartada | Por qué |
 |---|---|---|---|
 | 1 | **Mapeo determinista** (glosario exacto, luego normalizado, luego por parecido de palabras) con confianza explícita | Pedirle al modelo que relacione etiquetas y valores | Es el riesgo principal del PRD: que el modelo "complete" un campo con un valor plausible. Con reglas, todo valor tiene la ruta del dato en el maestro, y lo que no tiene fuente es faltante |
-| 2 | **Fecha de referencia configurable** (`FECHA_REFERENCIA`; la demo usa 2026-09-03) | Comparar siempre contra la fecha real | Con la fecha real (noviembre de 2026) la Cámara de Comercio también vence y ningún caso quedaría listo. Fijarla reproduce el escenario de la prueba y hace la demo determinista |
+| 2 | **Fecha de referencia configurable** (`FECHA_REFERENCIA`; vacía, hoy). La demo, los tests y el link de la prueba usan 2026-09-03, y el agente informa la fecha usada en cada resultado ("vigencias al …") | Comparar siempre contra la fecha real | Con la fecha real (noviembre de 2026) la Cámara de Comercio también vence y ningún caso quedaría listo. Fijarla reproduce el escenario de la prueba y hace la demo determinista; en producción se deja vacía |
 | 3 | **Enviar un paquete incompleto se permite, pero con una advertencia explícita** | Bloquear el envío si no está listo para firma | El PRD distingue "listo para firma" de "enviar", y su ejemplo (ec-corp-andina) espera el envío tras confirmación. Quien decide es la persona, con la advertencia por delante, y el envío deja constancia |
 | 4 | **Confirmación ligada a la acción** en el núcleo | Una confirmación genérica por turno | La prueba real mostró que un "sí" sobre el RUC podía autorizar un envío. Ligarla a la acción hace cumplir RN4 aunque el modelo se equivoque |
 | 5 | **exceljs 4.4.0** para el Excel y **pdf-lib** para el PDF | SheetJS (`xlsx`) desde npm | La versión de npm de SheetJS (0.18.5) tiene vulnerabilidades conocidas. exceljs es estable y permite escribir celdas exactas y estilos |
 | 6 | **Excel y PDF con fechas fijas en los metadatos** | Metadatos con la fecha actual | Los archivos salen idénticos byte a byte entre ejecuciones: la demo es determinista incluso en binarios |
 
+### Dependencias
+
+| Dependencia | Para qué | Alternativa descartada |
+|---|---|---|
+| `zod` | Esquemas de los argumentos de herramientas y de los datos (obligatorio por el PRD) | — |
+| `@google/genai` | SDK oficial de Gemini, el proveedor por defecto | Llamar la API REST a mano: más código propio y sin tipos |
+| `@anthropic-ai/sdk` | Segundo adaptador, para demostrar que el proveedor se cambia sin tocar el ciclo | — |
+| `exceljs` 4.4.0 | Escribir el Excel con hojas, celdas exactas, relleno y notas de celda (HU-3, P0) | SheetJS (`xlsx`) de npm: la versión 0.18.5 tiene vulnerabilidades conocidas |
+| `pdf-lib` | Formulario PDF generado (HU-3, P1) con fecha fija para que sea determinista | Rellenar un AcroForm: los fixtures no traen el PDF original |
+| `typescript`, `@types/bun` (solo desarrollo) | Verificación de tipos estricta | — |
+
+Bun aporta el servidor HTTP, el empaquetado del front, el test runner y la lectura de archivos, así que no hicieron falta Express, Vite ni Jest.
+
 ## 7. Supuestos
 
 1. El Excel se genera desde cero con las hojas y celdas de `plantilla-celdas.json`, porque los fixtures no traen el `.xlsx` original del cliente. Con el original, se abriría y se escribiría sobre él.
-2. Los campos por confirmar **se escriben** en el formulario con la marca "[por confirmar]" y celda ámbar; los faltantes quedan vacíos con celda roja.
+2. Los campos por confirmar se escriben con su **valor exacto**. La marca va aparte: nota de celda y relleno ámbar en el Excel, línea aparte en el PDF. Los faltantes quedan vacíos con relleno rojo.
 3. El NIT va sin dígito de verificación si la plantilla lo pide aparte; si no, va como `900123456-7`.
 4. "País" se escribe con el nombre ("Colombia"), no con el código ("CO"); los ingresos, con moneda y año. Es una presentación del mismo dato del maestro.
 5. En los formularios Excel todos los campos se tratan como obligatorios, porque la plantilla de celdas no lo indica.
 6. Los soportes vencidos se copian igual al paquete, para que la analista los vea, y se marcan como vencidos en el checklist.
 7. Un soporte emitido en un país distinto al del cliente se anota en el checklist ("Emitido en Colombia"), pero no bloquea, porque Periferia es colombiana.
 8. Un portal se considera "listo" si sus soportes lo están: no hay firma de formulario, pero sí paquete de soportes.
-9. "Enviar" solo escribe `ENVIO-SIMULADO.md`. El borrador de correo nunca incluye datos bancarios (RN2).
+9. "Enviar" solo escribe `ENVIO-SIMULADO.md`, con el estado que tenía el paquete al armarlo (misma fecha de referencia). El borrador de correo nunca incluye datos bancarios (RN2) y solo adjunta los soportes vigentes.
+10. Con la plantilla del cliente corrupta, `leer_solicitud` entrega igual país, cliente, formato y soportes, y `armar_paquete` genera el checklist de soportes sin formulario (no listo para firma). Así sigue con lo que sí puede (HU-5).
+11. Los argumentos `campos` (mapear) y `mapeo` (generar) son opcionales y no se usan como fuente: la herramienta recalcula desde la plantilla y el maestro y solo avisa si difieren. Así el modelo no puede introducir un valor que no esté en el maestro.
 
 ## 8. Cobertura
 
@@ -136,7 +157,7 @@ Usé **Claude Code** (modelo Claude Opus 5.5) como asistente de desarrollo:
 |---|---|---|
 | Análisis | Leyó el PRD y los fixtures y detectó la trampa de la fecha (parafiscales vencidos al 3 de septiembre; con la fecha real, también la Cámara de Comercio) | La fecha de referencia configurable |
 | Reutilización | Partió del núcleo común de los retos 02 y 03 | La estrategia de un núcleo para los tres retos |
-| Código | Escribió el mapeo, el Excel, el PDF, el paquete y 36 tests; verificó el Excel leyéndolo de vuelta celda por celda | Las reglas de presentación (NIT con o sin dígito, país por nombre) |
+| Código | Escribió el mapeo, el Excel, el PDF, el paquete y los tests; verificó el Excel leyéndolo de vuelta celda por celda | Las reglas de presentación (NIT con o sin dígito, país por nombre) |
 | Pruebas reales | Ejecutó el flujo de la sección 11 contra Gemini | — |
 | Documentación | Redactó README, CLAUDE.md y este documento, incluido el diseño de portales | Validar supuestos y redacción |
 
